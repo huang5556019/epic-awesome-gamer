@@ -3,101 +3,65 @@
 # Author     : QIN2DIM
 # Github     : https://github.com/QIN2DIM
 # Description:
-import os
+import asyncio
+from typing import Optional, List, Union
 
-import gevent
-from gevent.queue import Queue
+import aiohttp
 
 
-class CoroutineSpeedup:
+class AshFramework:
     """轻量化的协程控件"""
 
-    def __init__(self, docker=None, power: int = None):
+    def __init__(self, docker: Optional[List] = None):
         # 任务容器：queue
-        self.worker, self.done = Queue(), Queue()
-
+        self.worker, self.done = asyncio.Queue(), asyncio.Queue()
         # 任务容器
         self.docker = docker
-
-        # 协程数
-        self.power = max(os.cpu_count(), 2) if power is None else power
-
         # 任务队列满载时刻长度
         self.max_queue_size = 0
 
     def progress(self) -> str:
-        """
-        任务进度
-
-        :return:
-        """
-        p = self.max_queue_size - self.worker.qsize()
-        return "__pending__" if p < self.power else f"{p}/{self.max_queue_size}"
-
-    def launcher(self, *args, **kwargs):
-        """
-        适配器实例生产
-
-        :return:
-        """
-        while not self.worker.empty():
-            task = self.worker.get_nowait()
-            self.control_driver(task, *args, **kwargs)
-
-    def control_driver(self, task, *args, **kwargs):
-        """
-        默认逻辑
-
-        :param task:
-        :return:
-        """
-        raise ImportError
+        """任务进度"""
+        _progress = self.max_queue_size - self.worker.qsize()
+        return f"{_progress}/{self.max_queue_size}"
 
     def preload(self):
-        """
-        数据预处理
-
-        :return:
-        """
-        pass
+        """预处理"""
 
     def overload(self):
-        """
-        任务重载
-
-        :return:
-        """
+        """任务重载"""
         if self.docker:
             for task in self.docker:
                 self.worker.put_nowait(task)
         self.max_queue_size = self.worker.qsize()
 
-    def offload(self) -> list:
-        """
-        缓存卸载
-
-        :return:
-        """
-        docker = []
+    def offload(self) -> Optional[List]:
+        """缓存卸载"""
+        crash = []
         while not self.done.empty():
-            docker.append(self.done.get())
-        return docker
+            crash.append(self.done.get())
+        return crash
 
-    def killer(self):
-        """
-        缓存回收
+    async def control_driver(self, context, session=None):
+        """需要并发执行的代码片段"""
+        raise NotImplementedError
 
-        :return:
-        """
-        pass
+    async def launcher(self, session=None):
+        """适配接口模式"""
+        while not self.worker.empty():
+            context = self.worker.get_nowait()
+            await self.control_driver(context, session=session)
 
-    def go(self, power: int = None, *args, **kwargs):
+    async def subvert(self, workers: Union[str, int]):
         """
         框架接口
 
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(fl.go(workers))
+
+        :param workers: ["fast", power]
         :return:
         """
-
         # 任务重载
         self.overload()
 
@@ -105,17 +69,14 @@ class CoroutineSpeedup:
         if self.max_queue_size == 0:
             return
 
-        # 配置弹性采集功率
-        # self.power = max(os.cpu_count(), power, self.power)
-        self.power = self.power if power is None else power
-        self.power = self.max_queue_size if self.power > self.max_queue_size else self.power
+        # 粘性功率
+        workers = self.max_queue_size if workers in ["fast"] else workers
+        workers = workers if workers <= self.max_queue_size else self.max_queue_size
 
-        # 任务启动
+        # 弹性分发
         task_list = []
-        for _ in range(self.power):
-            task = gevent.spawn(self.launcher, *args, **kwargs)
-            task_list.append(task)
-        try:
-            gevent.joinall(task_list)
-        finally:
-            self.killer()
+        async with aiohttp.ClientSession() as session:
+            for _ in range(workers):
+                task = self.launcher(session=session)
+                task_list.append(task)
+            await asyncio.wait(task_list)

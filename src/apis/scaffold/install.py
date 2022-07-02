@@ -3,102 +3,75 @@
 # Author     : QIN2DIM
 # Github     : https://github.com/QIN2DIM
 # Description:
-import os
 import sys
+import webbrowser
+from typing import Optional
 
 from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.utils import get_browser_version_from_os
 
-from services.settings import DIR_MODEL, logger
-from services.utils import YOLO, CoroutineSpeedup, ToolBox
+from services.settings import DIR_MODEL, logger, PATH_RAINBOW
+from services.utils import ElephantsDrawnWithLeaves
+from services.utils import ResNetSeaplane
+from services.utils import YOLO
+from services.utils import get_challenge_ctx
+from services.utils import sk_recognition
 
-_HOOK_CDN_PREFIX = "https://curly-shape-d178.qinse.workers.dev/"
+
+def _download_model(onnx_prefix: Optional[str] = None):
+    """Pull models"""
+    logger.debug("Downloading YOLOv5(ONNX) object detection model...")
+
+    YOLO(dir_model=DIR_MODEL, onnx_prefix=onnx_prefix).download_model()
+    ElephantsDrawnWithLeaves(dir_model=DIR_MODEL).download_model()
+    ResNetSeaplane(dir_model=DIR_MODEL).download_model()
 
 
-def _sync_ctx():
-    """
-    下载最新版 google-chrome
-    :return:
-    """
-    # Ubuntu
+def _download_driver():
+    """下载浏览器驱动"""
+    logger.debug("Downloading ChromeDriver...")
+
+    # 自动下载并授权对应版本的 ChromeDriver
+    browser_version = get_browser_version_from_os("google-chrome")
+    if browser_version != "UNKNOWN":
+        return ChromeDriverManager(version="latest").install()
+
+    # 环境变量中缺少 `google-chrome` 提示玩家手动安装
+    logger.critical("当前环境变量缺少 `google-chrome`，请为你的设备手动安装 Chrome 浏览器。")
+    logger.info(
+        "Ubuntu: https://linuxize.com/post/how-to-install-google-chrome-web-browser-on-ubuntu-20-04/"
+    )
+    logger.info(
+        "CentOS 7/8: https://linuxize.com/post/how-to-install-google-chrome-web-browser-on-centos-7/"
+    )
     if "linux" not in sys.platform:
-        return
+        webbrowser.open("https://www.google.com/chrome/")
 
-    logger.debug("同步 google-chrome 驱动版本...")
-    os.system("apt-get update && apt-get install -y gcc wget")
-    os.system("wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb >/dev/null")
-    os.system("apt install ./google-chrome-stable_current_amd64.deb -y >/dev/null")
-    os.system("rm -rf ./google-chrome-stable_current_amd64.deb")
-    os.system("clear")
+    logger.info("安装完毕后重新执行 `install` 脚手架指令。")
 
 
-def _download_model(*args, **kwargs):
-    """
-    下载 YOLOv4 目标检测模型
-    :param cdn:
-    :return:
-    """
-    if not args:
-        pass
-    cdn = kwargs.get("cdn", False)
+def _download_rainbow():
+    logger.debug("Downloading Reinforcement of Memory | Rainbow Table...")
 
-    _yolo = YOLO(dir_model=DIR_MODEL)
-    if cdn is True and not _HOOK_CDN_PREFIX:
-        _yolo.cfg["src"] = _HOOK_CDN_PREFIX + _yolo.cfg["src"]
-        _yolo.weights["src"] = _HOOK_CDN_PREFIX + _yolo.weights["src"]
-
-    logger.debug("下载 YOLOv4 目标检测模型...")
-    _yolo.download_model()
+    sk_recognition.SKRecognition.sync_rainbow(path_rainbow=PATH_RAINBOW, convert=True)
 
 
-def _download_driver(*args, **kwargs):
-    """
-    下载浏览器驱动。
-
-    :return:
-    """
-    if not args:
-        pass
-    version = kwargs.get("version", "latest")
-
-    logger.debug("适配 ChromeDriver...")
-    ChromeDriverManager(version=version).install()
+def run(onnx_prefix: str = None):
+    """下载项目运行所需的各项依赖"""
+    logger.debug("正在下载系统依赖")
+    _download_driver()
+    _download_model(onnx_prefix=onnx_prefix)
+    _download_rainbow()
+    logger.success("系统依赖下载完毕")
 
 
-class PerformanceReleaser(CoroutineSpeedup):
-    def __init__(self, docker, power=None):
-        super(PerformanceReleaser, self).__init__(docker=docker, power=power)
+@logger.catch()
+def test():
+    """检查挑战者驱动版本是否适配"""
+    ctx = get_challenge_ctx(silence=True)
+    try:
+        ctx.get("https://www.epicgames.com/account/personal")
+    finally:
+        ctx.quit()
 
-    def control_driver(self, task, *args, **kwargs):
-        try:
-            task(*args, **kwargs)
-        except Exception as e:  # noqa
-            logger.exception(e)
-
-
-def run(cdn: bool = False):
-    """
-    下载项目运行所需的各项依赖。
-
-    :return:
-    """
-    logger.debug(ToolBox.runtime_report(
-        motive="BUILD",
-        action_name="RequirementInstaller",
-        message="正在下载系统依赖",
-        params=f"cdn={cdn}"
-    ))
-    docker = [
-        _download_driver,
-        _download_model
-    ]
-
-    # _sync_ctx()
-    booster = PerformanceReleaser(docker=docker, power=3)
-    booster.go(cdn=cdn)
-
-    logger.success(ToolBox.runtime_report(
-        motive="GET",
-        action_name="RequirementInstaller",
-        message="系统依赖下载完毕",
-        params=f"cdn={cdn}"
-    ))
+    logger.success("驱动适配成功")

@@ -7,9 +7,10 @@ from typing import Optional, Sequence
 
 
 class Explorer(Exception):
-    def __init__(self, msg: Optional[str] = None, stacktrace: Optional[Sequence[str]] = None) -> None:
+    def __init__(self, msg: Optional[str] = None, stacktrace: Optional[Sequence[str]] = None):
         self.msg = msg
         self.stacktrace = stacktrace
+        super().__init__()
 
     def __str__(self) -> str:
         exception_msg = "Message: {}\n".format(self.msg)
@@ -21,4 +22,7 @@ class Explorer(Exception):
 
 class DiscoveryTimeoutException(Explorer):
     """未能在规定时间内为指定玩家搜索免费游戏"""
-    pass
+
+
+class ProtocolOutdatedWarning(Explorer):
+    """Discovery缓存的商城数据丢失|为空|结构体过时"""
